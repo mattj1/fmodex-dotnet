@@ -7,6 +7,13 @@
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
+// ReSharper disable InconsistentNaming
+// ReSharper disable UnusedType.Global
+// ReSharper disable IdentifierTypo
+// ReSharper disable CommentTypo
+// ReSharper disable FieldCanBeMadeReadOnly.Global
+// ReSharper disable MemberCanBePrivate.Global
+// ReSharper disable UnusedMember.Global
 
 namespace FMOD
 {
@@ -632,7 +639,19 @@ namespace FMOD
         GEOMETRY_USECLOSEST       = 0x04000000,   /* All platforms - With the geometry engine, only process the closest polygon rather than accumulating all polygons the sound to listener line intersects. */
         DISABLE_MYEARS_AUTODETECT = 0x08000000    /* Win32 - Disables automatic setting of FMOD_SPEAKERMODE_STEREO to FMOD_SPEAKERMODE_MYEARS if the MyEars profile exists on the PC.  MyEars is HRTF 7.1 downmixing through headphones. */
     }
+    
+    public enum CHANNELORDER : int
+    {
+        DEFAULT,
+        WAVEFORMAT,
+        PROTOOLS,
+        ALLMONO,
+        ALLSTEREO,
+        ALSA,
 
+        MAX,
+        FORCEINT = 65536
+    }
 
     /*
     [ENUM]
@@ -1350,15 +1369,27 @@ namespace FMOD
         public FILE_SEEKCALLBACK           userseek;               /* [in] Optional. Specify 0 to ignore. Callback for seeking within this file. */
         public FILE_ASYNCREADCALLBACK      userasyncread;          /* [in] Optional. Specify 0 to ignore. Callback for asyncronously reading from this file. */
         public FILE_ASYNCCANCELCALLBACK    userasynccancel;        /* [in] Optional. Specify 0 to ignore. Callback for cancelling an asyncronous read. */
-        public SPEAKERMAPTYPE              speakermap;             /* [in] Optional. Specify 0 to ignore. Use this to differ the way fmod maps multichannel sounds to speakers.  See FMOD_SPEAKERMAPTYPE for more. */
+        public IntPtr                      fileuserdata;
+        public int                         filebuffersize;
+        public CHANNELORDER              channelorder;
         public IntPtr                      initialsoundgroup;      /* [in] Optional. Specify 0 to ignore. Specify a sound group if required, to put sound in as it is created. */
         public uint                        initialseekposition;    /* [in] Optional. Specify 0 to ignore. For streams. Specify an initial position to seek the stream to. */
         public TIMEUNIT                    initialseekpostype;     /* [in] Optional. Specify 0 to ignore. For streams. Specify the time unit for the position set in initialseekposition. */
         public int                         ignoresetfilesystem;    /* [in] Optional. Specify 0 to ignore. Set to 1 to use fmod's built in file system. Ignores setFileSystem callbacks and also FMOD_CREATESOUNEXINFO file callbacks.  Useful for specific cases where you don't want to use your own file system but want to use fmod's file system (ie net streaming). */
-        public int                         cddaforceaspi;          /* [in] Optional. Specify 0 to ignore. For CDDA sounds only - if non-zero use ASPI instead of NTSCSI to access the specified CD/DVD device. */
         public uint                        audioqueuepolicy;       /* [in] Optional. Specify 0 or FMOD_AUDIOQUEUE_CODECPOLICY_DEFAULT to ignore. Policy used to determine whether hardware or software is used for decoding, see FMOD_AUDIOQUEUE_CODECPOLICY for options (iOS >= 3.0 required, otherwise only hardware is available) */ 
         public uint                        minmidigranularity;     /* [in] Optional. Specify 0 to ignore. Allows you to set a minimum desired MIDI mixer granularity. Values smaller than 512 give greater than default accuracy at the cost of more CPU and vise versa. Specify 0 for default (512 samples). */
         public int                         nonblockthreadid;       /* [in] Optional. Specify 0 to ignore. Specifies a thread index to execute non blocking load on.  Allows for up to 5 threads to be used for loading at once.  This is to avoid one load blocking another.  Maximum value = 4. */
+        public IntPtr                      fsbguid;
+
+        public static CREATESOUNDEXINFO Create()
+        {
+            CREATESOUNDEXINFO info = new CREATESOUNDEXINFO()
+            {
+                cbsize = Marshal.SizeOf(typeof(CREATESOUNDEXINFO))
+            };
+            
+            return info;
+        }
     }
 
 
@@ -1793,10 +1824,12 @@ namespace FMOD
         {
             return FMOD_System_SetSoftwareFormat(systemraw, samplerate, format, numoutputchannels, maxinputchannels, resamplemethod);
         }
-        public RESULT getSoftwareFormat      (ref int samplerate, ref SOUND_FORMAT format, ref int numoutputchannels, ref int maxinputchannels, ref DSP_RESAMPLER resamplemethod, ref int bits)
+
+        public RESULT getSoftwareFormat(ref int samplerate, ref SPEAKERMODE speakermode, ref int numrawspeakers)
         {
-            return FMOD_System_GetSoftwareFormat(systemraw, ref samplerate, ref format, ref numoutputchannels, ref maxinputchannels, ref resamplemethod, ref bits);
+            return FMOD_System_GetSoftwareFormat(systemraw, ref samplerate, ref speakermode, ref numrawspeakers);
         }
+        
         public RESULT setDSPBufferSize       (uint bufferlength, int numbuffers)
         {
             return FMOD_System_SetDSPBufferSize(systemraw, bufferlength, numbuffers);
@@ -2067,7 +2100,8 @@ namespace FMOD
 
             try
             {
-                result = FMOD_System_CreateSound(systemraw, name_or_data, mode, 0, ref soundraw);
+                CREATESOUNDEXINFO info = CREATESOUNDEXINFO.Create();
+                result = FMOD_System_CreateSound(systemraw, name_or_data, mode, ref info, ref soundraw);
             }
             catch
             {
@@ -2163,7 +2197,8 @@ namespace FMOD
 
             try
             {
-                result = FMOD_System_CreateStream(systemraw, name_or_data, mode, 0, ref soundraw);
+                CREATESOUNDEXINFO info = CREATESOUNDEXINFO.Create();
+                result = FMOD_System_CreateStream(systemraw, name_or_data, mode, ref info, ref soundraw);
             }
             catch
             {
@@ -2347,7 +2382,7 @@ namespace FMOD
 
             return result;
         }
-        public RESULT playSound              (CHANNELINDEX channelid, Sound sound, bool paused, ref Channel channel)
+        public RESULT playSound(Sound sound, ChannelGroup channelGroup, bool paused, ref Channel channel)
         {
             RESULT result      = RESULT.OK;
             IntPtr      channelraw;
@@ -2364,7 +2399,7 @@ namespace FMOD
 
             try
             {
-                result = FMOD_System_PlaySound(systemraw, channelid, sound.getRaw(), (paused ? 1 : 0), ref channelraw);
+                result = FMOD_System_PlaySound(systemraw, sound.getRaw(), channelGroup.getRaw(), (paused ? 1 : 0), ref channelraw);
             }
             catch
             {
@@ -2809,7 +2844,7 @@ namespace FMOD
         [DllImport (VERSION.dll)]
         private static extern RESULT FMOD_System_SetSoftwareFormat      (IntPtr system, int samplerate, SOUND_FORMAT format, int numoutputchannels, int maxinputchannels, DSP_RESAMPLER resamplemethod);
         [DllImport (VERSION.dll)]
-        private static extern RESULT FMOD_System_GetSoftwareFormat      (IntPtr system, ref int samplerate, ref SOUND_FORMAT format, ref int numoutputchannels, ref int maxinputchannels, ref DSP_RESAMPLER resamplemethod, ref int bits);        
+        private static extern RESULT FMOD_System_GetSoftwareFormat      (IntPtr system, ref int samplerate, ref SPEAKERMODE speakermode, ref int numrawspeakers);        
         [DllImport (VERSION.dll)]
         private static extern RESULT FMOD_System_SetDSPBufferSize       (IntPtr system, uint bufferlength, int numbuffers);
         [DllImport (VERSION.dll)]
@@ -2904,10 +2939,6 @@ namespace FMOD
         private static extern RESULT FMOD_System_CreateSound            (IntPtr system, string name_or_data, MODE mode, ref CREATESOUNDEXINFO exinfo, ref IntPtr sound);
         [DllImport (VERSION.dll, CharSet = CharSet.Ansi)]  
         private static extern RESULT FMOD_System_CreateStream           (IntPtr system, string name_or_data, MODE mode, ref CREATESOUNDEXINFO exinfo, ref IntPtr sound);
-        [DllImport(VERSION.dll, CharSet = CharSet.Ansi)]
-        private static extern RESULT FMOD_System_CreateSound            (IntPtr system, string name_or_data, MODE mode, int exinfo, ref IntPtr sound);
-        [DllImport(VERSION.dll, CharSet = CharSet.Ansi)]
-        private static extern RESULT FMOD_System_CreateStream           (IntPtr system, string name_or_data, MODE mode, int exinfo, ref IntPtr sound);   
         [DllImport (VERSION.dll)]   
         private static extern RESULT FMOD_System_CreateSound            (IntPtr system, byte[] name_or_data, MODE mode, ref CREATESOUNDEXINFO exinfo, ref IntPtr sound);
         [DllImport (VERSION.dll)]
@@ -2927,7 +2958,7 @@ namespace FMOD
         [DllImport (VERSION.dll)]
         private static extern RESULT FMOD_System_CreateReverb           (IntPtr system, ref IntPtr reverb);
         [DllImport (VERSION.dll)]                 
-        private static extern RESULT FMOD_System_PlaySound              (IntPtr system, CHANNELINDEX channelid, IntPtr sound, int paused, ref IntPtr channel);
+        private static extern RESULT FMOD_System_PlaySound              (IntPtr system, IntPtr sound, IntPtr channelGroup, int paused, ref IntPtr channel);
         [DllImport (VERSION.dll)]
         private static extern RESULT FMOD_System_PlayDSP                (IntPtr system, CHANNELINDEX channelid, IntPtr dsp, int paused, ref IntPtr channel);
         [DllImport (VERSION.dll)]
