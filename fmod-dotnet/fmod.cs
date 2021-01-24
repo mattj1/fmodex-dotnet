@@ -27,7 +27,7 @@ namespace FMOD
 #if WIN64
         public const string dll    = "fmodex64";
 #else
-        public const string dll    = "fmodex";
+        public const string dll    = "fmod";
 #endif
     }
 
