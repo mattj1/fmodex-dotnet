@@ -56,6 +56,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Channel.cs" />
+    <Compile Include="ChannelGroup.cs" />
     <Compile Include="fmod.cs" />
     <Compile Include="fmod_dsp.cs" />
     <Compile Include="fmod_errors.cs" />
